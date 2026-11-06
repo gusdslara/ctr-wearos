@@ -1,3 +1,6 @@
+#ifdef __ANDROID__
+extern char* Platform_Android_GetStoredPath(void);
+#endif
 #include "platform/native_assets.h"
 
 #include <macros.h>

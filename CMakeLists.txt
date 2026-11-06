@@ -86,7 +86,7 @@ add_subdirectory(externals/SDL)
 
 # CTR Native
 if(ANDROID)
-    add_library(ctr_native SHARED main.c)
+    add_library(ctr_native SHARED main.c platform/native_android.c)
 else()
     add_executable(ctr_native main.c)
 endif()
@@ -120,6 +120,9 @@ else()
         -Wswitch-enum
         -Wformat
         -Wparentheses
+        -Wno-error
+        -Wno-format-security
+        -Wno-implicit-function-declaration
         $<$<CONFIG:Release>:-O2>
         $<$<CONFIG:Release>:-g>
     )

@@ -1,0 +1,60 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace "com.ctrnative.wear"
+    compileSdkVersion 34
+
+    defaultConfig {
+        applicationId "com.ctrnative.wear"
+        minSdkVersion 23
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0.0-wear"
+
+        ndk {
+            abiFilters 'armeabi-v7a', 'x86'
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_static", "-DCTR_NATIVE=ON"
+                abiFilters 'armeabi-v7a', 'x86'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "../../CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs = [
+                'src/main/java',
+                '../../externals/SDL/android-project/app/src/main/java'
+            ]
+            res.srcDirs = [
+                'src/main/res'
+            ]
+        }
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.9.0'
+    implementation 'com.google.zxing:core:3.5.3'
+}

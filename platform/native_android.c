@@ -12,9 +12,14 @@ void Platform_Android_PickFile(void) {
     jclass clazz = (*env)->GetObjectClass(env, activity);
     if (!clazz) return;
     jmethodID methodId = (*env)->GetStaticMethodID(env, clazz, "pickFile", "()V");
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        methodId = NULL;
+    }
 
     if (methodId) {
         (*env)->CallStaticVoidMethod(env, clazz, methodId);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
     } else {
         Platform_LogError("[CTR Android] Failed to find pickFile method\n");
     }
@@ -31,10 +36,18 @@ char* Platform_Android_GetStoredPath(void) {
     jclass clazz = (*env)->GetObjectClass(env, activity);
     if (!clazz) return NULL;
     jmethodID methodId = (*env)->GetStaticMethodID(env, clazz, "getStoredAssetPath", "()Ljava/lang/String;");
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        methodId = NULL;
+    }
 
     char* result = NULL;
     if (methodId) {
         jstring jPath = (jstring)(*env)->CallStaticObjectMethod(env, clazz, methodId);
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+            jPath = NULL;
+        }
         if (jPath) {
             const char* pathChars = (*env)->GetStringUTFChars(env, jPath, NULL);
             if (pathChars) {
@@ -58,10 +71,15 @@ int Platform_Android_IsPickerActive(void) {
     jclass clazz = (*env)->GetObjectClass(env, activity);
     if (!clazz) return 0;
     jmethodID methodId = (*env)->GetStaticMethodID(env, clazz, "isPickerActive", "()Z");
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        methodId = NULL;
+    }
 
     jboolean result = JNI_FALSE;
     if (methodId) {
         result = (*env)->CallStaticBooleanMethod(env, clazz, methodId);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
     }
 
     (*env)->DeleteLocalRef(env, activity);

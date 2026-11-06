@@ -133,6 +133,27 @@ int g_windowHeight = 0;
 global_variable int s_presentAspectW = 4;
 global_variable int s_presentAspectH = 3;
 global_variable SDL_Rect s_presentViewport = {0, 0, 0, 0};
+global_variable int s_wearZoomMode = 0; // 0 = Fill (square viewport, 4:3 image center-cropped, no distortion), 1 = Square / 4:3 Inscribed
+
+void NativeRenderer_SetWearZoomMode(int mode)
+{
+	s_wearZoomMode = mode;
+}
+
+int NativeRenderer_GetWearZoomMode(void)
+{
+	return s_wearZoomMode;
+}
+
+#if defined(__ANDROID__)
+#include <jni.h>
+JNIEXPORT void JNICALL Java_com_ctrnative_WearTouchOverlay_nativeSetWearZoomMode(JNIEnv *env, jclass clazz, jint mode)
+{
+	(void)env;
+	(void)clazz;
+	s_wearZoomMode = (int)mode;
+}
+#endif
 
 int g_dbg_wireframeMode = 0;
 int g_dbg_texturelessMode = 0;
@@ -145,6 +166,7 @@ global_variable GLuint s_packShader = 0;
 global_variable GLint s_packFlipYLoc = -1;
 global_variable GLuint s_presentVramShader = 0;
 global_variable GLint s_presentVramSourceRectLoc = -1;
+global_variable GLint s_presentVramRoundLensLoc = -1;
 global_variable GLuint s_vramQuadVAO = 0;
 global_variable GLuint s_vramQuadVBO = 0;
 
@@ -293,6 +315,20 @@ int NativeRenderer_InitialiseRender(char *windowName, int width, int height, int
 		NATIVE_RENDERER_ERROR("%s\n", "Failed to Intialise GL extensions");
 		return 0;
 	}
+
+#if defined(__ANDROID__)
+	if (g_window != NULL)
+	{
+		int actualW = 0, actualH = 0;
+		SDL_GetWindowSizeInPixels(g_window, &actualW, &actualH);
+		if (actualW > 0 && actualH > 0)
+		{
+			g_windowWidth = actualW;
+			g_windowHeight = actualH;
+			NATIVE_RENDERER_LOG("*Android window pixel size: %dx%d\n", g_windowWidth, g_windowHeight);
+		}
+	}
+#endif
 
 	return 1;
 }
@@ -490,6 +526,19 @@ internal void NativeRenderer_UpdatePresentationViewport(void)
 	int viewportW;
 	int viewportH;
 
+#if defined(__ANDROID__)
+	if (g_window != NULL)
+	{
+		int actualW = 0, actualH = 0;
+		SDL_GetWindowSizeInPixels(g_window, &actualW, &actualH);
+		if (actualW > 0 && actualH > 0)
+		{
+			g_windowWidth = actualW;
+			g_windowHeight = actualH;
+		}
+	}
+#endif
+
 	if ((g_windowWidth <= 0) || (g_windowHeight <= 0) || (s_presentAspectW <= 0) || (s_presentAspectH <= 0))
 	{
 		s_presentViewport.x = 0;
@@ -498,6 +547,32 @@ internal void NativeRenderer_UpdatePresentationViewport(void)
 		s_presentViewport.h = g_windowHeight;
 		return;
 	}
+
+#if defined(__ANDROID__)
+	if (s_wearZoomMode == 0)
+	{
+		// Option 0: Fill the whole round screen. The viewport is the full square and the
+		// 4:3 source is center-cropped to 1:1 in NativeRenderer_PresentVRAMRect (no lens warp).
+		int side = g_windowWidth < g_windowHeight ? g_windowWidth : g_windowHeight;
+		s_presentViewport.w = side;
+		s_presentViewport.h = side;
+		s_presentViewport.x = (g_windowWidth - side) / 2;
+		s_presentViewport.y = (g_windowHeight - side) / 2;
+		return;
+	}
+	else
+	{
+		// Option 1: Square / Rectangular 4:3 Game inscribed inside the circle (0% corner clipping)
+		int side = g_windowWidth < g_windowHeight ? g_windowWidth : g_windowHeight;
+		viewportW = (side * 78) / 100;
+		viewportH = (viewportW * 3) / 4;
+		s_presentViewport.w = viewportW;
+		s_presentViewport.h = viewportH;
+		s_presentViewport.x = (g_windowWidth - viewportW) / 2;
+		s_presentViewport.y = (g_windowHeight - viewportH) / 2;
+		return;
+	}
+#endif
 
 	viewportW = g_windowWidth;
 	viewportH = (viewportW * s_presentAspectH) / s_presentAspectW;
@@ -605,6 +680,10 @@ internal void NativeRenderer_DrawVRAMRegion(int x, int y, int width, int height)
 {
 	glUseProgram(s_presentVramShader);
 	glUniform4f(s_presentVramSourceRectLoc, (float)x, (float)y, (float)width, (float)height);
+	if (s_presentVramRoundLensLoc >= 0)
+	{
+		glUniform1i(s_presentVramRoundLensLoc, 0);
+	}
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, s_vram.texture);
 	glBindVertexArray(s_vramQuadVAO);
@@ -1148,8 +1227,10 @@ global_variable const char *ctr_pack_shader = "#ifdef VERTEX\n"
 global_variable const char *ctr_present_vram_shader = "#ifdef VERTEX\n"
                                                       "attribute vec2 a_position;\n"
                                                       "varying vec2 v_uv;\n"
+                                                      "varying vec2 v_pos;\n"
                                                       "uniform vec4 sourceRect;\n"
                                                       "void main() {\n"
+                                                      "\tv_pos = a_position;\n"
                                                       "\tvec2 screenUV = a_position * 0.5 + 0.5;\n"
                                                       "\tvec2 sourcePixel = sourceRect.xy + vec2(screenUV.x, 1.0 - screenUV.y) * sourceRect.zw;\n"
                                                       "\tv_uv = sourcePixel / vec2(1024.0, 512.0);\n"
@@ -1158,9 +1239,29 @@ global_variable const char *ctr_present_vram_shader = "#ifdef VERTEX\n"
                                                       "#endif\n"
                                                       "#ifdef FRAGMENT\n"
                                                       "varying vec2 v_uv;\n"
+                                                      "varying vec2 v_pos;\n"
+                                                      "uniform vec4 sourceRect;\n"
+                                                      "uniform int roundLens;\n"
                                                       "uniform sampler2D s_texture;\n"
                                                       "void main() {\n"
-                                                      "\tivec2 packedBytes = ivec2(texture2D(s_texture, v_uv).rg * 255.0 + 0.5);\n"
+                                                      "\tvec2 finalUV = v_uv;\n"
+                                                      "\tif (roundLens != 0) {\n"
+                                                      "\t\tfloat r2 = dot(v_pos, v_pos);\n"
+                                                      "\t\tif (r2 > 1.0) { fragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }\n"
+                                                      "\t\t// Smooth squircle/Fernandez-Guasti lens mapping: center stays 1:1 undistorted,\n"
+                                                      "\t\t// while the 4 rectangular corners of the game HUD gently curve into the round rim!\n"
+                                                      "\t\tvec2 p2 = v_pos * v_pos;\n"
+                                                      "\t\tfloat blend = 0.88;\n"
+                                                      "\t\tvec2 sq = vec2(\n"
+                                                      "\t\t\tv_pos.x / sqrt(max(0.0001, 1.0 - blend * p2.y)),\n"
+                                                      "\t\t\tv_pos.y / sqrt(max(0.0001, 1.0 - blend * p2.x))\n"
+                                                      "\t\t);\n"
+                                                      "\t\tsq = clamp(sq, -1.0, 1.0);\n"
+                                                      "\t\tvec2 screenUV = sq * 0.5 + 0.5;\n"
+                                                      "\t\tvec2 sourcePixel = sourceRect.xy + vec2(screenUV.x, 1.0 - screenUV.y) * sourceRect.zw;\n"
+                                                      "\t\tfinalUV = sourcePixel / vec2(1024.0, 512.0);\n"
+                                                      "\t}\n"
+                                                      "\tivec2 packedBytes = ivec2(texture2D(s_texture, finalUV).rg * 255.0 + 0.5);\n"
                                                       "\tint pixel = packedBytes.r | (packedBytes.g << 8);\n"
                                                       "\tivec3 color5 = ivec3(pixel & 31, (pixel >> 5) & 31, (pixel >> 10) & 31);\n"
                                                       "\tivec3 color8 = (color5 << 3) | (color5 >> 2);\n"
@@ -1182,6 +1283,7 @@ internal void NativeRenderer_InitVRAMPipelines(void)
 
 	s_presentVramShader = NativeRenderer_Shader_Compile(ctr_present_vram_shader, false);
 	s_presentVramSourceRectLoc = glGetUniformLocation(s_presentVramShader, "sourceRect");
+	s_presentVramRoundLensLoc = glGetUniformLocation(s_presentVramShader, "roundLens");
 
 	glGenVertexArrays(1, &s_vramQuadVAO);
 	glGenBuffers(1, &s_vramQuadVBO);
@@ -2206,6 +2308,8 @@ void NativeRenderer_PresentVRAMRect(int displayX, int displayY, int displayW, in
 	}
 
 	NativeRenderer_UpdateVRAM();
+	NativeRenderer_UpdatePresentationViewport();
+	NativeRenderer_ClearPresentationBars();
 
 	NativeRenderer_SetViewPort(s_presentViewport.x, s_presentViewport.y, s_presentViewport.w, s_presentViewport.h);
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -2214,7 +2318,29 @@ void NativeRenderer_PresentVRAMRect(int displayX, int displayY, int displayW, in
 	NativeRenderer_EnableDepth(0);
 	NativeRenderer_SetBlendMode(BM_NONE);
 
-	NativeRenderer_DrawVRAMRegion(displayX, displayY, displayW, displayH);
+	float srcX = (float)displayX;
+	float srcW = (float)displayW;
+#if defined(__ANDROID__)
+	if (s_wearZoomMode == 0)
+	{
+		// The PS1 frame is always shown as 4:3 regardless of its pixel width, so keep the
+		// central 3/4 horizontally to get an undistorted 1:1 image that fills the square
+		// viewport. Left/right edges and the screen corners outside the circle are cut.
+		float cropW = srcW * 0.75f;
+		srcX += (srcW - cropW) * 0.5f;
+		srcW = cropW;
+	}
+#endif
+	glUseProgram(s_presentVramShader);
+	glUniform4f(s_presentVramSourceRectLoc, srcX, (float)displayY, srcW, (float)displayH);
+	if (s_presentVramRoundLensLoc >= 0)
+	{
+		glUniform1i(s_presentVramRoundLensLoc, 0);
+	}
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, s_vram.texture);
+	glBindVertexArray(s_vramQuadVAO);
+	NativeRenderer_DrawTriangles(0, 2);
 	glBindVertexArray(0);
 
 	s_previousShader = (ShaderID)-1;

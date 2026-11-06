@@ -108,6 +108,11 @@ global_variable const bool *s_keyboardState;
 global_variable s32 s_inputInitialized;
 global_variable s32 s_installedSnapshotsActive;
 global_variable u16 s_touchButtons = 0xffff;
+global_variable u8 s_wearAnalogLX = 0x80;
+global_variable u8 s_wearAnalogLY = 0x80;
+global_variable u8 s_wearAnalogActive = 0;
+// 1 = game is showing a menu / pause / loading / results (wear tilt controls must be ignored)
+global_variable volatile s32 s_wearInMenu = 1;
 global_variable s32 s_keyboardControllerSlot = NATIVE_INPUT_DEFAULT_KEYBOARD_SLOT;
 global_variable s32 s_lastActiveControllerSlot = -1;
 
@@ -743,6 +748,9 @@ internal void NativeInput_OpenKnownControllers(void)
 }
 
 #include <SDL3/SDL_system.h>
+#if defined(__ANDROID__)
+#include <jni.h>
+#endif
 
 internal void NativeInput_AndroidVibrate(int device_id, float low, float high, int len)
 {
@@ -858,6 +866,25 @@ void Platform_InputShutdown(void)
 	s_keyboardState = NULL;
 }
 
+internal void NativeInput_UpdateWearMenuState(void)
+{
+	struct GameTracker *gGT;
+	u32 mode;
+
+	if ((sdata == NULL) || (sdata->gGT == NULL))
+	{
+		s_wearInMenu = 1;
+		return;
+	}
+
+	gGT = sdata->gGT;
+	mode = (u32)gGT->gameMode1;
+	s_wearInMenu = ((sdata->ptrActiveMenu != NULL) ||
+	                ((mode & (u32)(MAIN_MENU | PAUSE_ALL | LOADING | END_OF_RACE | GAME_CUTSCENE)) != 0))
+	                   ? 1
+	                   : 0;
+}
+
 void Platform_InputUpdate(void)
 {
 	u16 keyboardButtons;
@@ -867,6 +894,8 @@ void Platform_InputUpdate(void)
 	{
 		return;
 	}
+
+	NativeInput_UpdateWearMenuState();
 
 	if (s_installedSnapshotsActive != 0)
 	{
@@ -892,6 +921,12 @@ void Platform_InputUpdate(void)
 		if (slot == 0) {
 			u16 buttons = NativeInput_GetSnapshotButtons(&s_controllers[slot].snapshot);
 			NativeInput_SetSnapshotButtons(&s_controllers[slot].snapshot, buttons & s_touchButtons);
+			if (s_wearAnalogActive) {
+				s_controllers[slot].snapshot.id = NATIVE_INPUT_PAD_ANALOG;
+				// Menus: keep the wrist-tilt stick centered so it never moves the cursor.
+				s_controllers[slot].snapshot.analog[2] = s_wearInMenu ? 0x80 : s_wearAnalogLX;
+				s_controllers[slot].snapshot.analog[3] = s_wearInMenu ? 0x80 : s_wearAnalogLY;
+			}
 		}
 	}
 	NativeInput_WritePadBus();
@@ -948,6 +983,40 @@ void Platform_InputApplyTouchButtons(int slot, u16 buttons)
 	(void)slot;
 	s_touchButtons = buttons;
 }
+
+void Platform_InputApplyWearAnalog(int slot, int active, int lx, int ly)
+{
+	(void)slot;
+	s_wearAnalogActive = (u8)active;
+	s_wearAnalogLX = (u8)lx;
+	s_wearAnalogLY = (u8)ly;
+}
+
+#if defined(__ANDROID__)
+#include <jni.h>
+JNIEXPORT void JNICALL Java_com_ctrnative_WearTouchOverlay_nativeSetTouchButtons(JNIEnv *env, jclass clazz, jint buttons)
+{
+	(void)env;
+	(void)clazz;
+	s_touchButtons = (u16)buttons;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_ctrnative_WearTouchOverlay_nativeIsInMenu(JNIEnv *env, jclass clazz)
+{
+	(void)env;
+	(void)clazz;
+	return s_wearInMenu ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL Java_com_ctrnative_WearTouchOverlay_nativeSetWearAnalog(JNIEnv *env, jclass clazz, jboolean active, jint lx, jint ly)
+{
+	(void)env;
+	(void)clazz;
+	s_wearAnalogActive = active ? 1 : 0;
+	s_wearAnalogLX = (u8)lx;
+	s_wearAnalogLY = (u8)ly;
+}
+#endif
 
 int Platform_InputCycleKeyboardController(void)
 {
