@@ -1,40 +1,46 @@
-# CTR Native Android Port
+# CTR Native - Android & Wear OS Ports
 
-This project has been ported to Android using SDL3.
+This project brings Crash Team Racing to Android devices via SDL3, supporting both standard Android phones/tablets (`:app`) and **Wear OS smartwatches** (`:wear`).
 
-## Building
+---
 
-1.  **Clone with submodules**: 
-    `git clone --recursive https://github.com/Simon358/ctr-native-android`
-2.  **Open in Android Studio**: Open the `android` folder.
-3.  **Install NDK**: Go to `Settings > SDK Tools` and install `NDK (Side by side)` and `CMake`.
-4.  **Sync Gradle**: Click the "Elephant" icon.
-5.  **Build & Run**: The project is configured for 32-bit (`armeabi-v7a`) to maintain compatibility with the game's memory model.
+## ⌚ Wear OS Smartwatch Port (`:wear`)
 
-## Assets Setup (Modern Android)
+Features **Gyroscope Steering** (rotate your wrist left/right like a steering wheel to drive) and a **Circular Touch Overlay** mapped along the watch bezel.
 
-The game requires retail NTSC-U assets to run. 
+### Building Wear OS APK
+```bash
+./gradlew :wear:assembleDebug
+```
+Output: `android/wear/build/outputs/apk/debug/wear-debug.apk`
 
-### Recommended: File Picker (Automatic Copy)
-On first launch, the app will ask for **"All Files Access"** permission. After granting this:
-1.  In the "Missing Assets" dialog, click **"Select File"**.
-2.  Navigate to and select your `ctr-u.bin` or `BIGFILE.BIG` file.
-3.  The app will **automatically copy** the asset to its internal storage (`/data/data/com.ctrnative/files/assets/`).
-4.  **Restart the app**. Once copied, you no longer need the original file on your storage.
+### Installing on Watch via Wi-Fi ADB
+```bash
+adb connect <WATCH_IP>:<PORT>
+adb install -r wear/build/outputs/apk/debug/wear-debug.apk
+```
 
-### Manual Setup (PC/Root)
-Place your `ctr-u.bin` or extracted assets folder into:
-`/storage/emulated/0/Android/data/com.ctrnative/files/assets/`
+---
 
-## Troubleshooting
+## 📱 Android Phone Port (`:app`)
 
--   **Black Screen/Crash**: Ensure you have the correct NTSC-U retail assets.
--   **Viewing Logs**: Run the following command to see detailed output and crash reports:
-    `adb logcat -s CTR-Native:V CTRNativeInput:V SDL:V AndroidRuntime:E`
--   **OpenGL Errors**: This port requires **OpenGL ES 3.0**. 
+### Building Phone APK
+```bash
+./gradlew :app:assembleDebug
+```
+Output: `android/app/build/outputs/apk/debug/app-debug.apk`
 
-## Controls
+---
 
-- **Gamepads**: Supports standard Android gamepads (Backbone One, Xbox, DualShock) via SDL3.
-- **Touch Controls**: On-screen buttons are automatically enabled if no gamepad is detected.
-- **Vibration**: Supports native gamepad rumble via SDL3.
+## 📦 Assets Setup
+
+The game requires retail NTSC-U assets to run:
+1. Copy `ctr-u.bin` or `BIGFILE.BIG` to your device storage.
+2. Select it using the in-game file picker, or place manually at:
+   `/storage/emulated/0/Android/data/com.ctrnative/files/assets/`
+3. Restart the game.
+
+## 🛠️ Troubleshooting
+
+- **Logs**: Run `adb logcat -s CTR-Native:V CTRNativeInput:V SDL:V AndroidRuntime:E`
+- **OpenGL**: Requires an **OpenGL ES 3.0** compatible GPU driver.
