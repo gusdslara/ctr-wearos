@@ -1,6 +1,6 @@
-# Crash Team Racing (CTR) - Wear OS & Native Port
+# Crash Team Racing (CTR) - Wear OS & Android Port
 
-A native C/C++ port of **Crash Team Racing** (PS1, 1999) based on the [CTR-ModSDK](https://github.com/CTR-tools/CTR-ModSDK) decompilation, featuring a dedicated native engine and custom touch/gyroscope input stack built specifically for **Wear OS smartwatches** (Samsung Galaxy Watch 4/5/6/7/Ultra, Google Pixel Watch 1/2/3, Xiaomi Watch 2, etc.), plus Android phones and Desktop PCs.
+A native C/C++ port of **Crash Team Racing** (PS1, 1999) based on the [CTR-ModSDK](https://github.com/CTR-tools/CTR-ModSDK) decompilation, featuring a dedicated native engine and custom touch/gyroscope input stack built specifically for **Wear OS smartwatches** (Samsung Galaxy Watch 4/5/6/7/Ultra, Google Pixel Watch 1/2/3, Xiaomi Watch 2, etc.) and Android devices.
 
 <p align="center">
   <img src="watch_ctr_gyro_demo.png" alt="Crash Team Racing on Wear OS - Gyroscope Steering and Smart Touch Overlay" width="800">
@@ -52,54 +52,18 @@ CTR requires retail NTSC-U game assets to run:
 
 ---
 
-## 💻 Desktop & Android Phone Building
+## 📱 Building for Android Phones / Tablets
 
-### Prerequisites
-
-#### Windows
-The recommended native Windows toolchain is MSVC x86:
-1. Install Visual Studio 2022 with **Desktop development with C++** and Windows SDK.
-2. Ensure CMake 3.20+ is on `PATH`.
-3. Run `build-msvc.bat`, or use CLion CMake presets (`windows-msvc-x86`).
-
-#### Linux (Debian/Ubuntu)
-```bash
-sudo apt install gcc-multilib libx11-dev libxext-dev libgl1-mesa-dev libasound2-dev libudev-dev libdbus-1-dev
-chmod +x build.sh
-./build.sh
-```
-
-#### Android Phone
 ```bash
 cd android
 ./gradlew :app:assembleDebug
 ```
-Output: `android/app/build/outputs/apk/debug/app-debug.apk`
+Output APK: `android/app/build/outputs/apk/debug/app-debug.apk`
 
 ---
 
-## 📂 Directory Layout
+## 📜 Credits & Acknowledgments
 
-```
-ctr_native/
-  main.c              Entrypoint and native platform boundary
-  platform/           Native audio, input, memcard, CD, and PSX facade
-  build-msvc.bat      Windows build (MSVC x86)
-  build.bat           Windows build (MinGW i686)
-  build.sh            Linux build
-  android/
-    wear/             Dedicated Wear OS smartwatch module with Gyro & Touch Overlay
-    app/              Standard Android phone/tablet module
-  game/               Decompiled CTR game source (CTR-ModSDK)
-  include/            Platform facade headers
-  externals/
-    SDL/              SDL3 source (static build)
-```
-
----
-
-## 📜 Credits & License
-
-- Original game by **Naughty Dog** (1999).
+- Original game by **Naughty Dog** and **Sony Computer Entertainment** (1999).
 - Reverse engineering and decompilation by the [CTR-ModSDK](https://github.com/CTR-tools/CTR-ModSDK) project.
-- Wear OS port, gyroscope steering implementation, and circular touch UI by **Gustavo Lara** ([@gusdslara](https://github.com/gusdslara)).
+- Powered by [SDL3](https://github.com/libsdl-org/SDL).
