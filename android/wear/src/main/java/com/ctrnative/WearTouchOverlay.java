@@ -5,7 +5,9 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.RadialGradient;
 import android.graphics.RectF;
+import android.graphics.Shader;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.VibrationEffect;
@@ -52,6 +54,10 @@ import java.util.Map;
  *    - 3 toques com 2 dedos = START  (exibe "START" no meio da tela e some suavemente).
  */
 public class WearTouchOverlay extends View {
+
+    // Toggle para prints de divulgação (true = tela escurecida e controles 100% visíveis; false = jogo limpo com toque reativo)
+    public static boolean SHOW_CONTROLS_FOR_PRINT = false;
+
 
     // JNI Native Input & Renderer methods
     public static native void nativeSetTouchButtons(int buttons);
@@ -138,6 +144,11 @@ public class WearTouchOverlay extends View {
     private final Paint bannerBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF ovalRect = new RectF();
     private final RectF bannerRect = new RectF();
+    private final Paint scrimPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint iconBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private RadialGradient vignetteShader = null;
+    private float lastVignetteR = -1f;
     private final Path trianglePath = new Path();
 
     private final Vibrator vibrator;
@@ -165,6 +176,12 @@ public class WearTouchOverlay extends View {
 
         bannerBgPaint.setStyle(Paint.Style.FILL);
         bannerBgPaint.setColor(Color.argb(215, 14, 16, 22));
+
+        shadowPaint.setStyle(Paint.Style.STROKE);
+        shadowPaint.setStrokeCap(Paint.Cap.ROUND);
+
+        iconBgPaint.setStyle(Paint.Style.FILL);
+        iconBgPaint.setColor(Color.argb(185, 12, 14, 20));
     }
 
     public boolean isTouchGuarded(long guardDurationMs) {
@@ -526,6 +543,22 @@ public class WearTouchOverlay extends View {
         arcPaint.setStrokeWidth(lw);
 
         long now = System.currentTimeMillis();
+
+        // 0. Escurecimento de tela para prints (ativado somente quando SHOW_CONTROLS_FOR_PRINT == true)
+        if (SHOW_CONTROLS_FOR_PRINT) {
+            canvas.drawColor(Color.argb(150, 0, 0, 0)); // ~59% preto para alto contraste
+            if (vignetteShader == null || lastVignetteR != r) {
+                vignetteShader = new RadialGradient(
+                    cx, cy, r,
+                    new int[] { Color.argb(0, 0, 0, 0), Color.argb(115, 0, 0, 0), Color.argb(220, 0, 0, 0) },
+                    new float[] { 0.38f, 0.70f, 1.0f },
+                    Shader.TileMode.CLAMP
+                );
+                scrimPaint.setShader(vignetteShader);
+                lastVignetteR = r;
+            }
+            canvas.drawCircle(cx, cy, r, scrimPaint);
+        }
         boolean needsMoreFrames = false;
 
         // Apenas toques acendem o D-Pad (o sensor nunca envia direções nos menus)
@@ -567,46 +600,84 @@ public class WearTouchOverlay extends View {
             }
         }
 
-        // 2. Desenha apenas os arcos minimalistas ativos na borda (com fade-out de 280ms quando solto)
-        for (RimFlash rf : activeFlashes.values()) {
-            boolean isHeld = (heldMask & rf.mask) != 0;
-            long elapsed = isHeld ? 0 : (now - rf.startTime);
-            if (elapsed < FLASH_DURATION_MS) {
-                if (!isHeld) {
-                    needsMoreFrames = true;
-                }
-                float progress = 1.0f - ((float) elapsed / FLASH_DURATION_MS);
-                int alpha = (int) (progress * 235);
+        // 2. Todos os botões na borda circular (L1, R1, L2, R2, △, ✕, □, ○)
+        // Mantidos visíveis (~160 alpha) para exibir a interface completa na tela
+        // e iluminando com brilho máximo (235) ao tocar/segurar.
+        int[] defaultMasks = {
+            BTN_MASK_TRIANGLE, BTN_MASK_CROSS, BTN_MASK_SQUARE, BTN_MASK_CIRCLE,
+            BTN_MASK_L1, BTN_MASK_R1, BTN_MASK_L2, BTN_MASK_R2,
+            BTN_MASK_UP, BTN_MASK_DOWN, BTN_MASK_LEFT, BTN_MASK_RIGHT
+        };
 
+        for (int m : defaultMasks) {
+            RimFlash rf = activeFlashes.get(m);
+            if (rf == null) {
+                rf = new RimFlash();
+                rf.mask = m;
+                rf.angleDeg = getRimAngleForOrientation(m);
+                if ((m & BTN_MASK_TRIANGLE) != 0) { rf.label = "△"; rf.color = COLOR_TRIANGLE; }
+                else if ((m & BTN_MASK_CROSS) != 0) { rf.label = "✕"; rf.color = COLOR_CROSS; }
+                else if ((m & BTN_MASK_SQUARE) != 0) { rf.label = "□"; rf.color = COLOR_SQUARE; }
+                else if ((m & BTN_MASK_CIRCLE) != 0) { rf.label = "○"; rf.color = COLOR_CIRCLE; }
+                else if ((m & BTN_MASK_L1) != 0) { rf.label = "L1"; rf.color = COLOR_SHOULDER; }
+                else if ((m & BTN_MASK_R1) != 0) { rf.label = "R1"; rf.color = COLOR_SHOULDER; }
+                else if ((m & BTN_MASK_L2) != 0) { rf.label = "L2"; rf.color = COLOR_SHOULDER; }
+                else if ((m & BTN_MASK_R2) != 0) { rf.label = "R2"; rf.color = COLOR_SHOULDER; }
+                else if ((m & BTN_MASK_UP) != 0) { rf.label = "^"; rf.color = COLOR_DPAD; }
+                else if ((m & BTN_MASK_DOWN) != 0) { rf.label = "v"; rf.color = COLOR_DPAD; }
+                else if ((m & BTN_MASK_LEFT) != 0) { rf.label = "<"; rf.color = COLOR_DPAD; }
+                else if ((m & BTN_MASK_RIGHT) != 0) { rf.label = ">"; rf.color = COLOR_DPAD; }
+            }
+
+            boolean isHeld = (heldMask & m) != 0;
+            int alpha = 0;
+            if (isHeld) {
+                alpha = 240;
+            } else if (rf.startTime > 0) {
+                long elapsed = now - rf.startTime;
+                if (elapsed < FLASH_DURATION_MS) {
+                    needsMoreFrames = true;
+                    float progress = 1.0f - ((float) elapsed / FLASH_DURATION_MS);
+                    alpha = (int) (140 + progress * 100);
+                }
+            }
+            if (SHOW_CONTROLS_FOR_PRINT) {
+                alpha = Math.max(alpha, 240);
+            }
+            if (alpha > 0) {
                 drawRimIndicator(canvas, cx, cy, r, lw, rf, alpha);
             }
         }
 
-        // 3. Desenha o banner flutuante no meio da tela ("SELECT" / "START" / Modo) e some suavemente
-        if (centerBannerText != null && now < centerBannerEndTime) {
-            needsMoreFrames = true;
-            float remain = centerBannerEndTime - now;
-            int alpha = (remain < 280f) ? (int) (255 * (remain / 280f)) : 255;
+        // 3. Banner START no meio da tela
+        boolean showBanner = (centerBannerText != null && now < centerBannerEndTime) || SHOW_CONTROLS_FOR_PRINT;
+        if (showBanner) {
+            String bannerToShow = (centerBannerText != null && now < centerBannerEndTime) ? centerBannerText : "START";
+            int bannerColor = (centerBannerText != null && now < centerBannerEndTime) ? centerBannerColor : Color.rgb(115, 184, 255);
+            int bannerAlpha = SHOW_CONTROLS_FOR_PRINT ? 240 : 180;
+            if (centerBannerText != null && now < centerBannerEndTime) {
+                needsMoreFrames = true;
+                float remain = centerBannerEndTime - now;
+                bannerAlpha = (remain < 280f) ? (int) (255 * (remain / 280f)) : 255;
+            }
 
-            bannerBgPaint.setAlpha((int) (alpha * 0.88f));
-            float bw = r * 0.96f;
-            float bh = 40f;
+            bannerBgPaint.setAlpha((int) (bannerAlpha * 0.92f));
+            float bw = r * 0.48f;
+            float bh = 32f;
             bannerRect.set(cx - bw * 0.5f, cy - bh * 0.5f, cx + bw * 0.5f, cy + bh * 0.5f);
-            canvas.drawRoundRect(bannerRect, 20f, 20f, bannerBgPaint);
+            canvas.drawRoundRect(bannerRect, 16f, 16f, bannerBgPaint);
 
-            arcPaint.setStrokeWidth(2.5f);
-            arcPaint.setColor(centerBannerColor);
-            arcPaint.setAlpha(alpha);
-            canvas.drawRoundRect(bannerRect, 20f, 20f, arcPaint);
+            arcPaint.setStrokeWidth(2.2f);
+            arcPaint.setColor(bannerColor);
+            arcPaint.setAlpha(bannerAlpha);
+            canvas.drawRoundRect(bannerRect, 16f, 16f, arcPaint);
 
             bannerPaint.setColor(Color.WHITE);
-            bannerPaint.setAlpha(alpha);
-            bannerPaint.setTextSize(20f);
+            bannerPaint.setAlpha(bannerAlpha);
+            bannerPaint.setTextSize(16f);
             Paint.FontMetrics fm = bannerPaint.getFontMetrics();
             float textY = cy - (fm.ascent + fm.descent) * 0.5f;
-            canvas.drawText(centerBannerText, cx, textY, bannerPaint);
-        } else {
-            centerBannerText = null;
+            canvas.drawText(bannerToShow, cx, textY, bannerPaint);
         }
 
         if (needsMoreFrames) {
@@ -632,14 +703,28 @@ public class WearTouchOverlay extends View {
         float baseX = cx + ux * (tipDist - size);
         float baseY = cy + uy * (tipDist - size);
 
-        symbolPaint.setColor(rf.color);
-        symbolPaint.setAlpha(alpha);
+        float midX = (tipX + baseX) * 0.5f;
+        float midY = (tipY + baseY) * 0.5f;
+
+        // Fundo escuro sob o chevron para contraste maximo
+        iconBgPaint.setAlpha((int) (alpha * 0.88f));
+        canvas.drawCircle(midX, midY, size * 1.1f, iconBgPaint);
+
+        // Sombra sob o chevron
         float oldWidth = symbolPaint.getStrokeWidth();
-        symbolPaint.setStrokeWidth(Math.max(4f, r * 0.03f));
+        symbolPaint.setColor(Color.BLACK);
+        symbolPaint.setAlpha((int) (alpha * 0.80f));
+        symbolPaint.setStrokeWidth(Math.max(5f, r * 0.045f));
         trianglePath.reset();
         trianglePath.moveTo(baseX + px * size, baseY + py * size);
         trianglePath.lineTo(tipX, tipY);
         trianglePath.lineTo(baseX - px * size, baseY - py * size);
+        canvas.drawPath(trianglePath, symbolPaint);
+
+        // Traço colorido do chevron
+        symbolPaint.setColor(rf.color);
+        symbolPaint.setAlpha(Math.min(255, alpha + 35));
+        symbolPaint.setStrokeWidth(Math.max(3.8f, r * 0.032f));
         canvas.drawPath(trianglePath, symbolPaint);
         symbolPaint.setStrokeWidth(oldWidth);
     }
@@ -652,13 +737,18 @@ public class WearTouchOverlay extends View {
             drawDpadChevron(canvas, cx, cy, r, rf, alpha);
             return;
         }
-        arcPaint.setStrokeWidth(lw);
-        arcPaint.setColor(rf.color);
-        arcPaint.setAlpha(alpha);
-
         float pad = lw * 1.1f;
         ovalRect.set(cx - r + pad, cy - r + pad, cx + r - pad, cy + r - pad);
         float span = (rf.label.length() > 1) ? 34f : 42f;
+
+        // Sombra escura sob o arco
+        shadowPaint.setStrokeWidth(lw + 3.2f);
+        shadowPaint.setColor(Color.argb((int)(alpha * 0.75f), 0, 0, 0));
+        canvas.drawArc(ovalRect, rf.angleDeg - span * 0.5f, span, false, shadowPaint);
+
+        arcPaint.setStrokeWidth(lw);
+        arcPaint.setColor(rf.color);
+        arcPaint.setAlpha(alpha);
         canvas.drawArc(ovalRect, rf.angleDeg - span * 0.5f, span, false, arcPaint);
 
         double rad = Math.toRadians(rf.angleDeg);
@@ -667,8 +757,13 @@ public class WearTouchOverlay extends View {
         float iy = cy + (float) Math.sin(rad) * iconDist;
 
         float symRadius = 9.5f;
+
+        // Fundo escuro sob o simbolo / label
+        iconBgPaint.setAlpha((int) (alpha * 0.88f));
+        canvas.drawCircle(ix, iy, symRadius + 4f, iconBgPaint);
+
         symbolPaint.setColor(rf.color);
-        symbolPaint.setAlpha(alpha);
+        symbolPaint.setAlpha(Math.min(255, alpha + 35));
 
         if ((rf.mask & BTN_MASK_TRIANGLE) != 0) {
             trianglePath.reset();
